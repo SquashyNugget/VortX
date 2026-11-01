@@ -1,0 +1,1173 @@
+From 2c15df14d8cbabc636d75078ce73dce14833195b Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:41:16 +0000
+Subject: [PATCH 1/6] Add cinematic tvOS presentation primitives and cached
+ artwork transitions
+
+---
+ app/SourcesShared/GlassEpisodeCard.swift |  12 ++-
+ app/SourcesShared/Theme.swift            |  54 ++++++++--
+ app/SourcesTV/CinematicUI.swift          | 128 +++++++++++++++++++++++
+ app/SourcesTV/SharedUI.swift             |  31 +++---
+ 4 files changed, 200 insertions(+), 25 deletions(-)
+ create mode 100644 app/SourcesTV/CinematicUI.swift
+
+diff --git a/app/SourcesShared/GlassEpisodeCard.swift b/app/SourcesShared/GlassEpisodeCard.swift
+index 9869f82..d76b564 100644
+--- a/app/SourcesShared/GlassEpisodeCard.swift
++++ b/app/SourcesShared/GlassEpisodeCard.swift
+@@ -43,8 +43,10 @@ struct GlassEpisodeCard: View {
+     private static let watchedShade: Double = 0.58
+ 
+     private var artHeight: CGFloat { width * 9 / 16 }
+-    private var radius: CGFloat { tenFoot ? 24 : 22 }
+-    private var frosted: Bool { VisualEffects.glassEnabled && !reduceTransparency && contrast != .increased }
++    private var radius: CGFloat { tenFoot ? 15 : 22 }
++    // The Apple TV grid may show dozens of episodes while scrolling. A solid panel keeps the
++    // synopsis readable and avoids another blurred, scaled image layer for every focusable card.
++    private var frosted: Bool { !tenFoot && VisualEffects.glassEnabled && !reduceTransparency && contrast != .increased }
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 0) {
+@@ -60,7 +62,7 @@ struct GlassEpisodeCard: View {
+         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+         .overlay {
+             RoundedRectangle(cornerRadius: radius, style: .continuous)
+-                .strokeBorder(VortXGlass.highlight(0.16), lineWidth: 1)
++                .strokeBorder(Color.white.opacity(tenFoot ? 0.16 : 0.10), lineWidth: 1)
+         }
+         // Dimmed as one opaque card: art and panel lose their colour together and one shade darkens them evenly.
+         // Fading the card's opacity instead let the oversized blurred art behind the panel show through the
+@@ -196,7 +198,11 @@ struct GlassEpisodeCard: View {
+             .allowsHitTesting(false)
+             .accessibilityHidden(true)
+         } else {
++            #if os(tvOS)
++            Color(red: 0.07, green: 0.075, blue: 0.085)
++            #else
+             Theme.Palette.surface1
++            #endif
+         }
+     }
+ 
+diff --git a/app/SourcesShared/Theme.swift b/app/SourcesShared/Theme.swift
+index 5cee2dd..6569810 100644
+--- a/app/SourcesShared/Theme.swift
++++ b/app/SourcesShared/Theme.swift
+@@ -21,9 +21,15 @@ enum Theme {
+         /// The translucent glass LIFT tone (see `ThemeManager.glassVeil`). Exposed here so the glass reads it
+         /// through the same `Theme.Palette` door as the surfaces it is an elevation step of.
+         @MainActor static var glassVeil: Color { ThemeManager.shared.glassVeil }
++        #if os(tvOS)
++        static let textPrimary   = Color.white
++        static let textSecondary = rgb(0.78, 0.80, 0.83)
++        static let textTertiary  = rgb(0.67, 0.70, 0.74)
++        #else
+         static let textPrimary   = rgb(0.965, 0.945, 0.914) // #F6F1E9
+         static let textSecondary = rgb(0.737, 0.694, 0.631) // #BCB1A1
+-        static let textTertiary  = rgb(0.620, 0.580, 0.520) // #9E9485, raised from #8C8273 so 10-11pt text clears 4.5:1 on the warm canvas across all 8 accents
++        static let textTertiary  = rgb(0.620, 0.580, 0.520) // #9E9485
++        #endif
+         // Accent is user-themeable via ThemeManager (8 curated accents). accentSoft / onAccent follow it.
+         @MainActor static var accent: Color { ThemeManager.shared.accent }             // focus / selection / primary / progress
+         @MainActor static var accentBright: Color { ThemeManager.shared.accentBright } // focus glow highlight
+@@ -135,14 +141,14 @@ enum Theme {
+             (size * CGFloat(ThemeManager.shared.textScale)).rounded()
+         }
+         #if os(tvOS)
+-        static var hero: Font        { .system(size: scaled(64), weight: .heavy, design: .serif) }
+-        static var wordmark: Font    { .system(size: scaled(38), weight: .bold, design: .serif) }
+-        static var screenTitle: Font { .system(size: scaled(52), weight: .heavy) }
++        static var hero: Font        { .system(size: scaled(66), weight: .bold) }
++        static var wordmark: Font    { .system(size: scaled(38), weight: .semibold) }
++        static var screenTitle: Font { .system(size: scaled(50), weight: .semibold) }
+         static var sectionTitle: Font { .system(size: scaled(30), weight: .semibold) }
+-        static var cardTitle: Font   { .system(size: scaled(22), weight: .semibold) }
+-        static var body: Font        { .system(size: scaled(24), weight: .regular) }
++        static var cardTitle: Font   { .system(size: scaled(22), weight: .medium) }
++        static var body: Font        { .system(size: scaled(23), weight: .regular) }
+         static var label: Font       { .system(size: scaled(20), weight: .medium) }
+-        static var eyebrow: Font     { .system(size: scaled(15), weight: .bold) }
++        static var eyebrow: Font     { .system(size: scaled(15), weight: .semibold) }
+         #else
+         // iOS / macOS arm's-length ramp (S1). wordmark is unused in the app; 24 preserves its former
+         // proportion (0.62*38) since it was not part of the inversion bug.
+@@ -185,7 +191,11 @@ extension View {
+ /// Crafted card focus: scale + lift + warm ember glow, spring-eased, Reduce-Motion aware.
+ /// Reads `isFocused` from the enclosing Button (the nearest focusable ancestor).
+ struct CardFocusStyle: ButtonStyle {
++    #if os(tvOS)
++    var scale: CGFloat = 1.045
++    #else
+     var scale: CGFloat = 1.08
++    #endif
+     func makeBody(configuration: Configuration) -> some View {
+         CardFocusContent(configuration: configuration, scale: scale)
+     }
+@@ -208,14 +218,19 @@ private struct CardFocusContent: View {
+         #else
+         let active = focused
+         #endif
++        #if os(tvOS)
++        let haloOpacity = 0.22
++        #else
++        let haloOpacity = 0.75
++        #endif
+         let lifted = active && !reduceMotion
+         let label = configuration.label
+             .scaleEffect(lifted ? scale : (configuration.isPressed ? 0.97 : 1))
+             // Theme-colored halo on focus: an even accent glow that reads, at a glance and from
+             // across the room, which card the focus is on. Sized to sit inside the rails' padding
+             // so it never clips at a row edge.
+-            .shadow(color: Theme.Palette.accent.opacity(active ? 0.75 : 0),
+-                    radius: active ? 18 : 0, x: 0, y: 0)
++            .shadow(color: Theme.Palette.accent.opacity(active ? haloOpacity : 0),
++                    radius: active ? 15 : 0, x: 0, y: 0)
+             // A soft black depth underneath grounds the lifted card on any artwork or theme.
+             .shadow(color: .black.opacity(active ? 0.45 : 0.32),
+                     radius: active ? 16 : 12, x: 0, y: active ? 10 : 7)
+@@ -251,6 +266,17 @@ private struct PrimaryActionContent: View {
+         #else
+         let active = focused
+         #endif
++        #if os(tvOS)
++        let label = configuration.label
++            .font(Theme.Typography.label.weight(.semibold))
++            .foregroundStyle(Color.black)
++            .padding(.horizontal, Theme.Space.lg)
++            .padding(.vertical, Theme.Space.md)
++            .background(Color.white, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
++            .scaleEffect(active && !reduceMotion ? 1.035 : (configuration.isPressed ? 0.97 : 1))
++            .shadow(color: .black.opacity(active ? 0.6 : 0.35), radius: active ? 20 : 10, y: 9)
++            .animation(reduceMotion ? nil : Theme.Motion.focus, value: active)
++        #else
+         let label = configuration.label
+             .font(Theme.Typography.label)
+             .foregroundStyle(Theme.Palette.onAccent)
+@@ -264,6 +290,7 @@ private struct PrimaryActionContent: View {
+             .scaleEffect(active && !reduceMotion ? 1.06 : (configuration.isPressed ? 0.97 : 1))
+             .shadow(color: Theme.Palette.accent.opacity(active ? 0.55 : 0), radius: 26, y: 12)
+             .animation(reduceMotion ? nil : Theme.Motion.focus, value: active)
++        #endif
+         #if os(macOS)
+         return label.onHover { isHovered = $0 }
+         #else
+@@ -296,6 +323,13 @@ private struct RowFocusContent: View {
+         #else
+         let active = focused
+         #endif
++        #if os(tvOS)
++        let ring = Color.white.opacity(0.88)
++        let ringWidth: CGFloat = 2
++        #else
++        let ring = Theme.Palette.accent
++        let ringWidth: CGFloat = 3
++        #endif
+         let label = configuration.label
+             // Glass row fill (renders BELOW the ember ring / scale / lift-shadow below, which are kept
+             // byte-identical). `focused` lifts the fill alpha for the same brighten the old surface1 ->
+@@ -303,7 +337,7 @@ private struct RowFocusContent: View {
+             .vortxGlassRow(focused: active)
+             .overlay(
+                 RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+-                    .strokeBorder(Theme.Palette.accent, lineWidth: active ? 3 : 0)
++                    .strokeBorder(ring, lineWidth: active ? ringWidth : 0)
+             )
+             .scaleEffect(active && !reduceMotion ? 1.015 : (configuration.isPressed ? 0.99 : 1))
+             .shadow(color: active ? Theme.Palette.accent.opacity(0.28) : .clear, radius: 22, y: 10)
+diff --git a/app/SourcesTV/CinematicUI.swift b/app/SourcesTV/CinematicUI.swift
+new file mode 100644
+index 0000000..8f9cfeb
+--- /dev/null
++++ b/app/SourcesTV/CinematicUI.swift
+@@ -0,0 +1,128 @@
++import SwiftUI
++
++/// tvOS presentation primitives. Data, navigation destinations, and playback remain with the
++/// existing screen owners; these views do not create a second catalogue or history store.
++enum TVCinema {
++    static let ink = Color.white
++    static let secondaryInk = Color.white.opacity(0.76)
++    static let quietInk = Color.white.opacity(0.58)
++    static let panel = Color(red: 0.055, green: 0.062, blue: 0.075)
++    static let edge = Color.white.opacity(0.15)
++    static let pageInset: CGFloat = Theme.Space.screenEdge
++}
++
++struct TVCinemaScreenHeader: View {
++    let title: String
++    var eyebrow: String? = nil
++    var subtitle: String? = nil
++    var centered = false
++
++    var body: some View {
++        VStack(alignment: centered ? .center : .leading, spacing: 10) {
++            if let eyebrow {
++                Text(eyebrow.uppercased())
++                    .font(Theme.Typography.eyebrow)
++                    .tracking(2.2)
++                    .foregroundStyle(TVCinema.quietInk)
++            }
++            Text(title)
++                .font(Theme.Typography.screenTitle)
++                .tracking(-1.2)
++                .foregroundStyle(TVCinema.ink)
++                .lineLimit(2)
++                .minimumScaleFactor(0.75)
++                .accessibilityAddTraits(.isHeader)
++            if let subtitle {
++                Text(subtitle)
++                    .font(Theme.Typography.label)
++                    .foregroundStyle(TVCinema.secondaryInk)
++                    .lineLimit(2)
++            }
++        }
++        .multilineTextAlignment(centered ? .center : .leading)
++        .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
++    }
++}
++
++/// High-contrast actions for the Home feature. A custom style gives the remote a visible focus
++/// state without introducing another focus coordinator or intercepting Menu/Back.
++struct TVCinemaActionStyle: ButtonStyle {
++    var prominent = false
++
++    func makeBody(configuration: Configuration) -> some View {
++        TVCinemaActionContent(configuration: configuration, prominent: prominent)
++    }
++}
++
++private struct TVCinemaActionContent: View {
++    let configuration: ButtonStyleConfiguration
++    let prominent: Bool
++    @Environment(\.isFocused) private var focused
++    @ReducedMotion private var reduceMotion
++
++    var body: some View {
++        configuration.label
++            .font(Theme.Typography.label.weight(.semibold))
++            .foregroundStyle(prominent ? Color.black : TVCinema.ink)
++            .padding(.horizontal, 28)
++            .frame(minHeight: 66)
++            .background {
++                RoundedRectangle(cornerRadius: 13, style: .continuous)
++                    .fill(prominent ? Color.white : TVCinema.panel.opacity(focused ? 0.96 : 0.82))
++            }
++            .overlay {
++                RoundedRectangle(cornerRadius: 13, style: .continuous)
++                    .strokeBorder(prominent ? (focused ? Color.black.opacity(0.8) : .clear)
++                                            : Color.white.opacity(focused ? 0.85 : 0.28),
++                                  lineWidth: focused ? 2 : 1)
++            }
++            .scaleEffect(focused && !reduceMotion ? 1.035 : (configuration.isPressed ? 0.98 : 1))
++            .shadow(color: .black.opacity(focused ? 0.58 : 0.30), radius: focused ? 18 : 10, y: 8)
++            .animation(reduceMotion ? nil : Theme.Motion.focus, value: focused)
++            .animation(reduceMotion ? nil : Theme.Motion.state, value: configuration.isPressed)
++    }
++}
++
++/// Focused artwork already belongs to `FocusedItemModel`. The buttons open the real detail page:
++/// movie playback uses its existing Watch/source pipeline, while series open their episode browser.
++/// No direct URL, synthetic source, or new progress state is constructed here.
++struct TVCinemaHomeActions: View {
++    @ObservedObject var model: FocusedItemModel
++    var restrictedIDs: Set<String> = []
++
++    var body: some View {
++        Group {
++            if let hero = model.hero, !hero.id.isEmpty, !restrictedIDs.contains(hero.id) {
++                HStack(spacing: 14) {
++                    if hero.type == "movie" {
++                        NavigationLink {
++                            DetailView(type: hero.type, id: hero.id, autoPlayOnAppear: true)
++                        } label: {
++                            Label("Watch now", systemImage: "play.fill")
++                        }
++                        .buttonStyle(TVCinemaActionStyle(prominent: true))
++                        .accessibilityHint("Opens VortX's source selection and playback")
++                    } else if hero.type == "series" {
++                        NavigationLink {
++                            DetailView(type: hero.type, id: hero.id)
++                        } label: {
++                            Label("Browse episodes", systemImage: "play.rectangle.on.rectangle")
++                        }
++                        .buttonStyle(TVCinemaActionStyle(prominent: true))
++                    }
++                    if hero.type != "series" {
++                        NavigationLink {
++                            DetailView(type: hero.type, id: hero.id)
++                        } label: {
++                            Label("Details", systemImage: "info.circle")
++                        }
++                        .buttonStyle(TVCinemaActionStyle())
++                    }
++                    Spacer(minLength: 0)
++                }
++                .padding(.horizontal, TVCinema.pageInset)
++                .padding(.vertical, 12)
++            }
++        }
++    }
++}
+diff --git a/app/SourcesTV/SharedUI.swift b/app/SourcesTV/SharedUI.swift
+index c36bbcf..dd63eb0 100644
+--- a/app/SourcesTV/SharedUI.swift
++++ b/app/SourcesTV/SharedUI.swift
+@@ -475,6 +475,7 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+     /// while the clip played.
+     var trailer: () -> TrailerLayer
+     @EnvironmentObject private var theme: ThemeManager
++    @ReducedMotion private var reduceMotion
+     /// Settings > Effects and performance: animated, still or no focus art.
+     @AppStorage(VisualEffects.backdropKey) private var backdropChoice = VisualEffects.auto
+     private var backdropMode: VisualEffects.Backdrop {
+@@ -501,9 +502,8 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+             Theme.Palette.canvas.ignoresSafeArea()
+             if let hero = model.hero {
+                 if backdropMode != .off {
+-                    FullBleedBackdrop(url: hero.backdrop, allowsUltraHD: hero.allowsUltraHD ?? false)
+-                        .id(hero.id)
+-                        .transition(.opacity)
++                    FullBleedBackdrop(url: hero.backdrop, allowsUltraHD: hero.allowsUltraHD ?? false,
++                                      animatesReplacement: backdropMode == .animated)
+                 }
+                 // The muted trailer clip sits OVER the still backdrop but UNDER the details, so a
+                 // resolved clip becomes the moving background while the logo / meta / synopsis stay on
+@@ -518,8 +518,9 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+                 }
+             }
+         }
+-        .animation(backdropMode == .animated ? .easeOut(duration: 0.35) : nil, value: model.hero?.id)
+-        .animation(.easeOut(duration: 0.25), value: model.detailsVisible)
++        .animation(backdropMode == .animated && !reduceMotion ? .easeOut(duration: 0.35) : nil,
++                   value: model.hero?.id)
++        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.detailsVisible)
+         // Resolve the focused title's clearlogo by id (TMDB, same source as the landscape cards) so the
+         // hero shows the logo in place of the serif title text, matching the iOS/Mac hero. Re-runs per hero.
+         .task(id: model.hero?.id) { await loadHeroLogo() }
+@@ -541,6 +542,11 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+     /// reads as one composed unit instead of evenly stacked lines.
+     private func detailsBlock(_ hero: FocusedHero) -> some View {
+         VStack(alignment: .leading, spacing: 0) {
++            Text(hero.type.uppercased())
++                .font(Theme.Typography.eyebrow)
++                .tracking(2.4)
++                .foregroundStyle(TVCinema.secondaryInk)
++                .padding(.bottom, 12)
+             if let heroLogo {
+                 // The clearlogo IS the title in image form; expose the name to VoiceOver, not the art.
+                 Image(uiImage: heroLogo).resizable().aspectRatio(contentMode: .fit)
+@@ -550,24 +556,24 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+             } else {
+                 Text(hero.title)
+                     .font(Theme.Typography.screenTitle)
+-                    .foregroundStyle(Theme.Palette.textPrimary)
++                    .foregroundStyle(TVCinema.ink)
+                     .lineLimit(2).minimumScaleFactor(0.7)
+                     .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+             }
+             Text(hero.metaLine)
+                 .font(Theme.Typography.label)
+-                .foregroundStyle(Theme.Palette.textSecondary)
++                .foregroundStyle(TVCinema.secondaryInk)
+                 .padding(.top, 14)
+             if let genres = hero.genreLine {
+                 Text(genres)
+                     .font(Theme.Typography.label)
+-                    .foregroundStyle(Theme.Palette.textTertiary)
++                    .foregroundStyle(TVCinema.quietInk)
+                     .padding(.top, 6)
+             }
+             if let overview = hero.overview, !overview.isEmpty {
+                 Text(overview)
+                     .font(Theme.Typography.body)
+-                    .foregroundStyle(Theme.Palette.textSecondary)
++                    .foregroundStyle(TVCinema.secondaryInk)
+                     .lineLimit(3).lineSpacing(5)
+                     .frame(maxWidth: 740, alignment: .leading)
+                     .padding(.top, 18)
+@@ -585,6 +591,7 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
+         let resolved = await Fanart.logo(id: hero.id, type: hero.type)
+             ?? PosterArtwork.logo(id: hero.id, fallback: hero.logo ?? metahubLogo(for: hero.id))
+         guard let lg = resolved, let img = await fetchHeroImage(lg) else { return }
++        guard !Task.isCancelled, model.hero?.id == hero.id else { return }
+         heroLogo = img
+     }
+ 
+@@ -842,10 +849,10 @@ struct PosterCard: View {
+                     .opacity(isWatched ? 0.55 : 1)
+                 if !catalogPrefs.hidePosterLabels {
+                     Text(displayTitle)
+-                        .font(.system(size: 18, weight: .medium))
++                        .font(Theme.Typography.label)
+                         .lineLimit(1)
+                         .truncationMode(.tail)
+-                        .foregroundStyle(Theme.Palette.textSecondary)
++                        .foregroundStyle(TVCinema.secondaryInk)
+                         .frame(width: cardWidth, alignment: .leading)
+                 }
+             }
+@@ -947,7 +954,7 @@ struct CoreEmptyState: View {
+         VStack(spacing: Theme.Space.md) {
+             Image(systemName: systemImage)
+                 .font(.system(size: 60, weight: .regular))
+-                .foregroundStyle(Theme.Palette.accent)
++                .foregroundStyle(TVCinema.secondaryInk)
+             Text(title)
+                 .font(Theme.Typography.sectionTitle)
+                 .foregroundStyle(Theme.Palette.textPrimary)
+-- 
+2.51.1
+
+
+From 3eabd626226cad4f5e6890a83554e5068e68d7b3 Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:41:18 +0000
+Subject: [PATCH 2/6] Connect cinematic Home actions and refine detail and
+ player chrome
+
+---
+ app/SourcesTV/DetailView.swift   | 27 +++++++++++++++---------
+ app/SourcesTV/HomeView.swift     | 32 +++++++++++++++++++++-------
+ app/SourcesTV/TVPlayerView.swift | 36 ++++++++++++++++----------------
+ 3 files changed, 59 insertions(+), 36 deletions(-)
+
+diff --git a/app/SourcesTV/DetailView.swift b/app/SourcesTV/DetailView.swift
+index f3c28ed..a1b9467 100644
+--- a/app/SourcesTV/DetailView.swift
++++ b/app/SourcesTV/DetailView.swift
+@@ -1642,15 +1642,11 @@ struct DetailView: View {
+         // now a plain in-flow VStack: a leading Spacer pushes the title/actions block onto the lower band
+         // where the FullBleedBackdrop's own bottom scrim keeps it readable. Mirrors moviePage exactly.
+         VStack(alignment: .leading, spacing: Theme.Space.sm) {
+-            Spacer().frame(height: 380)
++            Spacer().frame(height: 350)
+             VStack(alignment: .leading, spacing: Theme.Space.sm) {
+                 // This visible title/metadata block is the top focus destination for every lower rail.
+                 VStack(alignment: .leading, spacing: Theme.Space.sm) {
+-                    Text(m.name)
+-                        .font(Theme.Typography.hero).tracking(-1.5)
+-                        .foregroundStyle(Theme.Palette.textPrimary)
+-                        .lineLimit(2).minimumScaleFactor(0.6)
+-                        .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
++                    titleOrLogo(m)
+                     metaRow(m)
+                     financialsRow()
+                     releaseDatesRow()
+@@ -2653,8 +2649,8 @@ struct CoreSeasonedEpisodes: View {
+                 artwork: AnyView(thumbnail(v, isWatched: isWatched, progress: progress, cardArt: true)),
+                 tenFoot: true)
+             .overlay {
+-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+-                    .strokeBorder(Theme.Palette.accent, lineWidth: focusedEpisode == v.id ? 4 : 0)
++                RoundedRectangle(cornerRadius: 15, style: .continuous)
++                    .strokeBorder(TVCinema.ink.opacity(0.9), lineWidth: focusedEpisode == v.id ? 2 : 0)
+             }
+         }
+         .buttonStyle(CardFocusStyle(scale: 1.04))
+@@ -3143,8 +3139,12 @@ struct FullBleedBackdrop: View {
+     // other call sites have a 16:9 backdrop and want it edge-to-edge), keeping those paths unchanged.
+     var contentMode: ContentMode = .fill
+     var allowsUltraHD = true
++    var animatesReplacement = true
+     @EnvironmentObject private var theme: ThemeManager
++    @ReducedMotion private var reduceMotion
+     @State private var image: UIImage?
++    @State private var imageKey = ""
++    @State private var loadingReplacement = false
+ 
+     private var maxPixel: Int {
+         let bounds = UIScreen.main.nativeBounds
+@@ -3167,11 +3167,16 @@ struct FullBleedBackdrop: View {
+             .overlay {
+                 if let image {
+                     Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
++                        .id(imageKey)
++                        .transition(.opacity)
+                 } else {
+                     Theme.Palette.surface1
+                 }
+             }
+             .clipped()
++            // Hold the previous decoded image until the next one is ready. Focus can move faster
++            // than a backdrop request; clearing the art at task start flashed the blank canvas.
++            .overlay(TVCinema.panel.opacity(loadingReplacement ? 0.30 : 0).allowsHitTesting(false))
+             .overlay(
+                 // Light hand: the artwork stays vivid across most of the screen; just enough
+                 // canvas at the bottom for rows and at the leading edge for the text block.
+@@ -3185,14 +3190,16 @@ struct FullBleedBackdrop: View {
+                 LinearGradient(colors: [Theme.Palette.canvas.opacity(0.6), .clear],
+                                startPoint: .leading, endPoint: .center))
+             .ignoresSafeArea()
++            .animation(reduceMotion || !animatesReplacement ? nil : .easeOut(duration: 0.35), value: imageKey)
+             .task(id: "\(artworkCandidates.joined(separator: "\n"))#\(maxPixel)") {
+-                // A failed new URL must not keep the previous title's artwork on screen.
+-                image = nil
++                loadingReplacement = image != nil
+                 let loaded = await ArtworkFallbackPolicy.firstAvailable(artworkCandidates) {
+                     await PosterImageLoader.load($0, maxPixel: CGFloat(maxPixel))
+                 }
+                 guard !Task.isCancelled else { return }
+                 image = loaded
++                imageKey = artworkCandidates.joined(separator: "\n")
++                loadingReplacement = false
+             }
+     }
+ }
+diff --git a/app/SourcesTV/HomeView.swift b/app/SourcesTV/HomeView.swift
+index f1a16c0..00c59de 100644
+--- a/app/SourcesTV/HomeView.swift
++++ b/app/SourcesTV/HomeView.swift
+@@ -151,6 +151,12 @@ struct HomeView: View {
+                 ScrollView {
+                     LazyVStack(alignment: .leading, spacing: Theme.Space.lg) {
+                         Color.clear.frame(height: 0).scrollToTopAnchor()   // re-select Home tab -> scroll here
++                        // Private remote history and overlay-profile progress keep their existing
++                        // guarded Continue Watching route. The hero never bypasses that context.
++                        TVCinemaHomeActions(model: focusModel,
++                            restrictedIDs: renderedContinueWatching.selection.source.isPrivate
++                                || renderedContinueWatching.selection.sessionID != nil
++                                ? Set(renderedContinueWatching.selection.items.map(\.id)) : [])
+                         HStack {
+                             HomeSurpriseButton(isActive: isActive, candidates: homeSurpriseCandidates) { homeSurpriseRoute = $0 }
+                             Spacer(minLength: 0)
+@@ -835,9 +841,19 @@ struct RailHeader: View {
+     let title: String
+ 
+     var body: some View {
+-        VStack(alignment: .leading, spacing: 6) {
+-            if let eyebrow { Text(eyebrow).eyebrowStyle() }
+-            Text(title).sectionTitleStyle()
++        HStack(alignment: .bottom, spacing: Theme.Space.md) {
++            VStack(alignment: .leading, spacing: 6) {
++                if let eyebrow {
++                    Text(eyebrow).eyebrowStyle(TVCinema.quietInk)
++                }
++                Text(title)
++                    .sectionTitleStyle()
++                    .accessibilityAddTraits(.isHeader)
++            }
++            Rectangle()
++                .fill(TVCinema.edge)
++                .frame(height: 1)
++                .padding(.bottom, 8)
+         }
+         .padding(.horizontal, Theme.Space.screenEdge)
+     }
+@@ -852,12 +868,11 @@ struct GroupHeader: View {
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 8) {
+-            if let eyebrow { Text(eyebrow).eyebrowStyle(Theme.Palette.accent) }
++            if let eyebrow { Text(eyebrow).eyebrowStyle(TVCinema.quietInk) }
+             Text(title).screenTitleStyle()
+             Rectangle()
+-                .fill(Theme.Palette.accent)
+-                .frame(width: 64, height: 4)
+-                .clipShape(Capsule())
++                .fill(TVCinema.edge)
++                .frame(width: 112, height: 1)
+         }
+         .padding(.horizontal, Theme.Space.screenEdge)
+         .padding(.top, Theme.Space.md)
+@@ -1518,7 +1533,8 @@ struct TVHomeRailEditorView: View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.md) {
+                 HStack(alignment: .center) {
+-                    Text("Customize Home").screenTitleStyle()
++                    TVCinemaScreenHeader(title: String(localized: "Customize Home"),
++                                         eyebrow: String(localized: "Your layout"))
+                     Spacer()
+                     Button { dismiss() } label: { Text("Done") }
+                         .buttonStyle(ChipButtonStyle(selected: false))
+diff --git a/app/SourcesTV/TVPlayerView.swift b/app/SourcesTV/TVPlayerView.swift
+index 10475a9..b713017 100644
+--- a/app/SourcesTV/TVPlayerView.swift
++++ b/app/SourcesTV/TVPlayerView.swift
+@@ -9573,7 +9573,7 @@ struct TVPlayerView: View {
+                         skipTo(segment)
+                     } label: {
+                         HStack(spacing: Theme.Space.sm) {
+-                            Image(systemName: "forward.fill").foregroundStyle(Theme.Palette.accent)
++                            Image(systemName: "forward.fill").foregroundStyle(TVCinema.ink)
+                             if let remaining = autoSkipRemaining(for: segment) {
+                                 Text("\(segment.label) in \(max(1, Int(remaining.rounded(.up))))s")
+                                     .fontWeight(.semibold).monospacedDigit()
+@@ -9583,14 +9583,13 @@ struct TVPlayerView: View {
+                         }
+                         .padding(.leading, Theme.Space.xl).padding(.vertical, Theme.Space.md)
+                         .padding(.trailing, Theme.Space.sm)
+-                        // Glass ember skip pill (mockup .skippill): warm glass with an ember hairline and ember
+-                        // glyph, upgrading to Liquid Glass on tvOS 26. Ink label, ember icon.
++                        // Legible, restrained chrome over a moving picture.
+                         .foregroundStyle(Theme.Palette.textPrimary)
+                         .vortxGlass(in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous),
+                                     fillAlpha: VortXGlass.barFillAlpha, shadow: .pill)
+                         .overlay {
+                             RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+-                                .strokeBorder(Theme.Palette.accent.opacity(0.5), lineWidth: 1)
++                                .strokeBorder(TVCinema.edge, lineWidth: 1)
+                         }
+                     }
+                     .vortxSelfFocusButton()
+@@ -9612,7 +9611,7 @@ struct TVPlayerView: View {
+                                 .contentShape(Circle())
+                                 .overlay {
+                                     Circle().stroke(
+-                                        Theme.Palette.accent,
++                                        TVCinema.ink,
+                                         lineWidth: skipPillFocusedCancel ? 2 : 0
+                                     )
+                                 }
+@@ -9638,18 +9637,18 @@ struct TVPlayerView: View {
+                 Spacer()
+                 HStack(spacing: 28) {
+                     VStack(alignment: .leading, spacing: 4) {
+-                        Text("UP NEXT").font(.caption.weight(.bold)).tracking(2)
++                        Text("UP NEXT").font(Theme.Typography.eyebrow).tracking(2)
+                             .foregroundStyle(Theme.Palette.textTertiary)
+                         if let label = nextEpisodeLabel {
+-                            Text(label).font(.title3.weight(.semibold))
++                            Text(label).font(Theme.Typography.sectionTitle)
+                                 .foregroundStyle(Theme.Palette.textPrimary).lineLimit(1)
+                         }
+                         if let segment = currentSkip, segment.kind == .credits,
+                            let remaining = autoSkipRemaining(for: segment) {
+                             Text("Skipping credits in \(max(1, Int(remaining.rounded(.up))))s")
+-                                .font(.callout).foregroundStyle(Theme.Palette.textSecondary)
++                                .font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
+                         } else if let r = upNextRemaining {
+-                            Text("Playing in \(r)s").font(.callout).foregroundStyle(Theme.Palette.textSecondary)
++                            Text("Playing in \(r)s").font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
+                         }
+                     }
+                     upNextButton("Play Now", systemImage: "play.fill", highlighted: !upNextWantsCredits)
+@@ -9680,16 +9679,17 @@ struct TVPlayerView: View {
+             if let img = systemImage { Image(systemName: img) }
+             Text(title).lineLimit(1)
+         }
+-        .font(.headline.weight(.semibold))
+-        .foregroundStyle(highlighted ? Theme.Palette.onAccent : Theme.Palette.textPrimary)
++        .font(Theme.Typography.label.weight(.semibold))
++        .foregroundStyle(highlighted ? Color.black : TVCinema.ink)
+         .padding(.horizontal, horizontalPadding).padding(.vertical, verticalPadding)
+-        // Highlighted (Play Now / focused) stays a prominent solid-ember pill for 10-foot legibility;
+-        // the idle pill (Watch Credits) rides the warm glass. The opaque accent layer sits above the
+-        // glass so, when highlighted, it reads as solid ember rather than tinted glass.
+-        .background { if highlighted { Capsule().fill(Theme.Palette.accent) } }
+-        .vortxGlass(in: Capsule(), fillAlpha: VortXGlass.pillFillAlpha, shadow: .flat)
+-        .overlay(Capsule().stroke(Theme.Palette.canvas, lineWidth: highlighted ? 3 : 0))
+-        .scaleEffect(accessibilityReduceMotion ? 1.0 : (highlighted ? 1.06 : 1.0))
++        // These prompts are remote-driven, so the selected state must be visible without SwiftUI focus.
++        .background(highlighted ? Color.white : TVCinema.panel.opacity(0.94),
++                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
++        .overlay {
++            RoundedRectangle(cornerRadius: 13, style: .continuous)
++                .strokeBorder(highlighted ? Color.clear : TVCinema.edge, lineWidth: 1)
++        }
++        .scaleEffect(accessibilityReduceMotion ? 1.0 : (highlighted ? 1.035 : 1.0))
+         .fixedSize(horizontal: true, vertical: false)
+     }
+ 
+-- 
+2.51.1
+
+
+From c8807c928f60d2798774b55f3149843153f465ad Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:41:20 +0000
+Subject: [PATCH 3/6] Unify discovery, search, library, and live screen
+ hierarchy
+
+---
+ app/SourcesTV/DiscoverView.swift        | 5 +++--
+ app/SourcesTV/LibraryView.swift         | 4 +++-
+ app/SourcesTV/LiveView.swift            | 3 ++-
+ app/SourcesTV/SearchView.swift          | 2 ++
+ app/SourcesTV/TVLiveGuideView.swift     | 3 ++-
+ app/SourcesTV/TVNetworkSharesView.swift | 5 +++--
+ app/SourcesTV/TVPosterStyleView.swift   | 4 +++-
+ app/SourcesTV/TVWatchlistView.swift     | 3 ++-
+ 8 files changed, 20 insertions(+), 9 deletions(-)
+
+diff --git a/app/SourcesTV/DiscoverView.swift b/app/SourcesTV/DiscoverView.swift
+index 2af5b9a..e74d5d9 100644
+--- a/app/SourcesTV/DiscoverView.swift
++++ b/app/SourcesTV/DiscoverView.swift
+@@ -140,8 +140,9 @@ struct DiscoverView: View {
+     /// catalog is loaded, so it can hand the panel the current catalog's genre + type context.
+     @ViewBuilder private func titleRow(hasCatalog: Bool) -> some View {
+         let filters = catalogPrefs.discoverFilters
+-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.md) {
+-            Text("Discover").screenTitleStyle()
++        HStack(alignment: .bottom, spacing: Theme.Space.md) {
++            TVCinemaScreenHeader(title: String(localized: "Discover"),
++                                 eyebrow: String(localized: "Explore"))
+             Spacer(minLength: Theme.Space.md)
+             if hasCatalog {
+                 Button { showFilters = true } label: {
+diff --git a/app/SourcesTV/LibraryView.swift b/app/SourcesTV/LibraryView.swift
+index d5e37ea..6f3aaa3 100644
+--- a/app/SourcesTV/LibraryView.swift
++++ b/app/SourcesTV/LibraryView.swift
+@@ -110,7 +110,9 @@ struct LibraryView: View {
+                 ScrollView {
+                     VStack(alignment: .leading, spacing: Theme.Space.md) {
+                         Color.clear.frame(height: 0).scrollToTopAnchor()   // re-select Library tab -> scroll here
+-                        Text("Library").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)
++                        TVCinemaScreenHeader(title: String(localized: "Library"),
++                                             eyebrow: String(localized: "Your collection"))
++                            .padding(.horizontal, Theme.Space.screenEdge)
+                         Button(action: selectRandomLibraryItem) {
+                             Label("Random pick", systemImage: "shuffle")
+                         }
+diff --git a/app/SourcesTV/LiveView.swift b/app/SourcesTV/LiveView.swift
+index 0045bcc..80230c6 100644
+--- a/app/SourcesTV/LiveView.swift
++++ b/app/SourcesTV/LiveView.swift
+@@ -49,7 +49,8 @@ struct LiveView: View {
+                 .heroBottomStrip()
+             }
+             .overlay(alignment: .topLeading) {
+-                Text("Live TV").screenTitleStyle()
++                TVCinemaScreenHeader(title: String(localized: "Live TV"),
++                                     eyebrow: String(localized: "Channels and guide"))
+                     .padding(.horizontal, Theme.Space.screenEdge)
+                     .padding(.top, 44)
+                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+diff --git a/app/SourcesTV/SearchView.swift b/app/SourcesTV/SearchView.swift
+index 844983c..7217cff 100644
+--- a/app/SourcesTV/SearchView.swift
++++ b/app/SourcesTV/SearchView.swift
+@@ -133,6 +133,8 @@ private struct TVSearchContent: View {
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: Theme.Space.lg) {
++            TVCinemaScreenHeader(title: String(localized: "Search"),
++                                 eyebrow: String(localized: "Find something to watch"))
+             if !history.isEmpty && !isTyping {
+                 historySection
+             }
+diff --git a/app/SourcesTV/TVLiveGuideView.swift b/app/SourcesTV/TVLiveGuideView.swift
+index 6363003..ed73dc3 100644
+--- a/app/SourcesTV/TVLiveGuideView.swift
++++ b/app/SourcesTV/TVLiveGuideView.swift
+@@ -7,7 +7,8 @@ struct TVLiveGuideView: View {
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: Theme.Space.md) {
+-            Text("TV guide").screenTitleStyle()
++            TVCinemaScreenHeader(title: String(localized: "TV guide"),
++                                 eyebrow: String(localized: "Live TV"))
+             if channels.isEmpty {
+                 Text("No live channels yet. Add an IPTV playlist or a live TV add-on and its channels appear here.")
+                     .font(Theme.Typography.body).foregroundStyle(Theme.Palette.textSecondary)
+diff --git a/app/SourcesTV/TVNetworkSharesView.swift b/app/SourcesTV/TVNetworkSharesView.swift
+index b674687..ae96236 100644
+--- a/app/SourcesTV/TVNetworkSharesView.swift
++++ b/app/SourcesTV/TVNetworkSharesView.swift
+@@ -10,7 +10,8 @@ struct TVNetworkSharesView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text("Network shares").screenTitleStyle()
++                TVCinemaScreenHeader(title: String(localized: "Network shares"),
++                                     eyebrow: String(localized: "Your media"))
+                 Text("Play videos straight from a NAS or computer on your network: an SMB share (smb://nas/Movies), a WebDAV address, or a web server's folder listing.")
+                     .font(Theme.Typography.body).foregroundStyle(Theme.Palette.textSecondary)
+                     .frame(maxWidth: 1100, alignment: .leading)
+@@ -60,7 +61,7 @@ struct TVNetworkFolderView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.md) {
+-                Text(title).screenTitleStyle()
++                TVCinemaScreenHeader(title: title, eyebrow: share.name)
+                 if let playMessage {
+                     Text(playMessage).font(Theme.Typography.label).foregroundStyle(Theme.Palette.danger)
+                 }
+diff --git a/app/SourcesTV/TVPosterStyleView.swift b/app/SourcesTV/TVPosterStyleView.swift
+index 80827c8..5f610b4 100644
+--- a/app/SourcesTV/TVPosterStyleView.swift
++++ b/app/SourcesTV/TVPosterStyleView.swift
+@@ -16,7 +16,9 @@ struct TVPosterStyleView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text("Poster Style").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)
++                TVCinemaScreenHeader(title: String(localized: "Poster Style"),
++                                     eyebrow: String(localized: "Appearance"))
++                    .padding(.horizontal, Theme.Space.screenEdge)
+ 
+                 TVPosterStylePreview()
+                     .frame(maxWidth: .infinity)
+diff --git a/app/SourcesTV/TVWatchlistView.swift b/app/SourcesTV/TVWatchlistView.swift
+index 0dcd162..ab54dfe 100644
+--- a/app/SourcesTV/TVWatchlistView.swift
++++ b/app/SourcesTV/TVWatchlistView.swift
+@@ -56,7 +56,8 @@ struct TVWatchlistView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text("Watchlist").screenTitleStyle()
++                TVCinemaScreenHeader(title: String(localized: "Watchlist"),
++                                     eyebrow: String(localized: "Saved for later"))
+                 Button { dismiss() } label: {
+                     Label("Back to Library", systemImage: "chevron.left")
+                 }
+-- 
+2.51.1
+
+
+From b3cdaa28d83c90f8840170865d34ce0b7fb4003c Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:41:24 +0000
+Subject: [PATCH 4/6] Refresh profile, add-on, and settings presentation
+
+---
+ app/SourcesShared/AddonStoreView.swift |  6 +++++-
+ app/SourcesShared/AddonsView.swift     | 11 +++++++++++
+ app/SourcesShared/ProfilesView.swift   | 26 ++++++++++++++++++++++++--
+ app/SourcesTV/BackupExportView.swift   |  3 ++-
+ app/SourcesTV/BackupImportView.swift   |  3 ++-
+ app/SourcesTV/SettingsView.swift       | 12 +++++++++---
+ app/SourcesTV/TVWhatsNewView.swift     |  3 ++-
+ 7 files changed, 55 insertions(+), 9 deletions(-)
+
+diff --git a/app/SourcesShared/AddonStoreView.swift b/app/SourcesShared/AddonStoreView.swift
+index 9c61a4e..224e102 100644
+--- a/app/SourcesShared/AddonStoreView.swift
++++ b/app/SourcesShared/AddonStoreView.swift
+@@ -141,10 +141,14 @@ struct AddonStoreView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
++                #if os(tvOS)
++                TVCinemaScreenHeader(title: String(localized: "Discover add-ons"),
++                                     eyebrow: String(localized: "Community catalog"))
++                #else
+                 Text("Discover add-ons").screenTitleStyle()
+-                    // A long localized title scales down to fit instead of overflowing / clipping the row.
+                     .lineLimit(2)
+                     .minimumScaleFactor(0.6)
++                #endif
+                 hint("Browse the community add-on collection and install with one tap. Each shows whether it is reachable right now. Installed add-ons sync to your account and the official apps.")
+                 searchField
+                 if catalog.loading && catalog.addons.isEmpty {
+diff --git a/app/SourcesShared/AddonsView.swift b/app/SourcesShared/AddonsView.swift
+index bdc9290..c503fb4 100644
+--- a/app/SourcesShared/AddonsView.swift
++++ b/app/SourcesShared/AddonsView.swift
+@@ -192,7 +192,13 @@ struct AddonsView: View {
+                     // Read the shared order revision so a reorder (in-app drag or remote pull) re-runs body and
+                     // re-sorts the ForEach below via orderedByApplied. Must be READ in body to be tracked.
+                     let _ = orderObserver.revision
++                    #if os(tvOS)
++                    TVCinemaScreenHeader(title: String(localized: "Add-ons"),
++                                         eyebrow: String(localized: "Your sources"),
++                                         subtitle: String(localized: "Manage installed add-ons and their catalogs"))
++                    #else
+                     Text("Add-ons").screenTitleStyle()
++                    #endif
+                     if !(account.isSignedIn || vortxSync.isSignedIn) {
+                         hint("Sign in to manage your add-ons. They sync across your devices and the official apps.")
+                     } else {
+@@ -749,7 +755,12 @@ struct AddonReorderTVView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.md) {
++                #if os(tvOS)
++                TVCinemaScreenHeader(title: String(localized: "Reorder add-ons"),
++                                     eyebrow: String(localized: "Add-ons"))
++                #else
+                 Text("Reorder add-ons").screenTitleStyle()
++                #endif
+                 ProfileAddonInheritanceControls(showsVisibility: false)
+                 Text(profiles.activeSharesMainAddons
+                      ? "Move an add-on up or down to customize this profile's ranking. Main's order stays unchanged."
+diff --git a/app/SourcesShared/ProfilesView.swift b/app/SourcesShared/ProfilesView.swift
+index 8da40fc..dfd2bea 100644
+--- a/app/SourcesShared/ProfilesView.swift
++++ b/app/SourcesShared/ProfilesView.swift
+@@ -129,7 +129,7 @@ struct ProfilePickerView: View {
+                                 // surfaces move to true vertical centering below.
+                                 Spacer(minLength: max(40, geometry.size.height * 0.34))
+                             }
+-                            if let movie = artwork.movie {
++                            if !layout.isTV, let movie = artwork.movie {
+                                 Text(movie.name)
+                                     .modifier(ProfilePickerText(size: layout.movieTextSize, style: .title, design: .serif))
+                                     .multilineTextAlignment(.center)
+@@ -137,11 +137,26 @@ struct ProfilePickerView: View {
+                                     .padding(.bottom, 12)
+                                     .accessibilityHidden(true)
+                             }
++                            #if os(tvOS)
++                            VStack(spacing: 14) {
++                                Text("VORTX")
++                                    .font(Theme.Typography.eyebrow)
++                                    .tracking(4)
++                                    .foregroundStyle(TVCinema.secondaryInk)
++                                Text(isEditing ? "Edit profiles" : "Who's watching?")
++                                    .font(Theme.Typography.screenTitle)
++                                    .foregroundStyle(TVCinema.ink)
++                                    .accessibilityAddTraits(.isHeader)
++                            }
++                            .multilineTextAlignment(.center)
++                            .padding(.bottom, 22)
++                            #else
+                             Text(isEditing ? "Edit profiles" : "Who's watching?")
+                                 .modifier(ProfilePickerText(size: layout.headingTextSize, style: .title2, design: .rounded))
+                                 .foregroundStyle(.white)
+                                 .multilineTextAlignment(.center)
+                                 .accessibilityAddTraits(.isHeader)
++                            #endif
+                             if !nativeSync.isSignedIn {
+                                 Text("Sign in to your VortX account to load your profiles.")
+                                     .font(.callout).foregroundStyle(.white)
+@@ -910,8 +925,15 @@ private struct ProfileAvatarFace: View {
+     @Environment(\.isFocused) private var focused
+     var body: some View {
+         ZStack(alignment: .bottomTrailing) {
++            #if os(tvOS)
+             RoundedRectangle(cornerRadius: side * 0.23, style: .continuous)
+-                .fill(LinearGradient(colors: [accent, accent.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing))
++                .fill(LinearGradient(colors: [accent.opacity(0.68), TVCinema.panel],
++                                     startPoint: .topLeading, endPoint: .bottomTrailing))
++            #else
++            RoundedRectangle(cornerRadius: side * 0.23, style: .continuous)
++                .fill(LinearGradient(colors: [accent, accent.opacity(0.45)],
++                                     startPoint: .topLeading, endPoint: .bottomTrailing))
++            #endif
+             Text(profile.avatar).font(.system(size: side * 0.53))
+                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+             if profile.hasPin || isEditing || isCurrent {
+diff --git a/app/SourcesTV/BackupExportView.swift b/app/SourcesTV/BackupExportView.swift
+index ce3fb71..64e791b 100644
+--- a/app/SourcesTV/BackupExportView.swift
++++ b/app/SourcesTV/BackupExportView.swift
+@@ -35,7 +35,8 @@ struct BackupExportView: View {
+ 
+     var body: some View {
+         VStack(spacing: Theme.Space.md) {
+-            Text("Back up").screenTitleStyle()
++            TVCinemaScreenHeader(title: String(localized: "Back up"),
++                                 eyebrow: String(localized: "Account and data"), centered: true)
+ 
+             switch status {
+             case .starting:
+diff --git a/app/SourcesTV/BackupImportView.swift b/app/SourcesTV/BackupImportView.swift
+index 51d5e5b..f25fba1 100644
+--- a/app/SourcesTV/BackupImportView.swift
++++ b/app/SourcesTV/BackupImportView.swift
+@@ -17,7 +17,8 @@ struct BackupImportView: View {
+         GeometryReader { geometry in
+             ScrollView {
+                 VStack(spacing: Theme.Space.lg) {
+-                    Text("Restore").screenTitleStyle()
++                    TVCinemaScreenHeader(title: String(localized: "Restore"),
++                                         eyebrow: String(localized: "Account and data"), centered: true)
+                     Text("Scan the code below on a phone or browser signed in to VortX to bring your profiles, add-ons, library, and watch history onto this Apple TV.")
+                         .font(Theme.Typography.body)
+                         .foregroundStyle(Theme.Palette.textSecondary)
+diff --git a/app/SourcesTV/SettingsView.swift b/app/SourcesTV/SettingsView.swift
+index 2183109..6a5f958 100644
+--- a/app/SourcesTV/SettingsView.swift
++++ b/app/SourcesTV/SettingsView.swift
+@@ -211,7 +211,8 @@ struct SettingsView: View {
+     private var settingsLanding: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text("Settings").screenTitleStyle()
++                TVCinemaScreenHeader(title: String(localized: "Settings"),
++                                     eyebrow: String(localized: "Make VortX yours"))
+                 // Keep the move state visible above both categories and global search results.
+                 seedingBanner
+                 searchSection
+@@ -233,7 +234,9 @@ struct SettingsView: View {
+ 
+     /// Native links keep remote Back and focus restoration on the existing navigation stack.
+     private var settingsCategories: some View {
+-        VStack(alignment: .leading, spacing: Theme.Space.md) {
++        LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Space.md),
++                            GridItem(.flexible(), spacing: Theme.Space.md)],
++                  alignment: .leading, spacing: Theme.Space.md) {
+             ForEach(TVSettingsCategory.allCases) { category in
+                 NavigationLink(value: category) {
+                     HStack(spacing: Theme.Space.md) {
+@@ -256,6 +259,7 @@ struct SettingsView: View {
+                             .accessibilityHidden(true)
+                     }
+                     .padding(Theme.Space.lg)
++                    .frame(minHeight: 138)
+                     .frame(maxWidth: .infinity, alignment: .leading)
+                 }
+                 .buttonStyle(RowFocusStyle())
+@@ -269,7 +273,9 @@ struct SettingsView: View {
+     private func settingsCategoryPage(_ category: TVSettingsCategory) -> some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text(category.title).screenTitleStyle()
++                TVCinemaScreenHeader(title: category.title,
++                                     eyebrow: String(localized: "Settings"),
++                                     subtitle: category.summary)
+                 ForEach(category.sections, id: \.self) { id in
+                     settingsSection(id)
+                 }
+diff --git a/app/SourcesTV/TVWhatsNewView.swift b/app/SourcesTV/TVWhatsNewView.swift
+index 9bc5d84..93fa807 100644
+--- a/app/SourcesTV/TVWhatsNewView.swift
++++ b/app/SourcesTV/TVWhatsNewView.swift
+@@ -12,7 +12,8 @@ struct TVWhatsNewView: View {
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+-                Text("What's New").screenTitleStyle()
++                TVCinemaScreenHeader(title: String(localized: "What's New"),
++                                     eyebrow: String(localized: "VortX updates"))
+                 Text("You're on VortX \(WhatsNew.version)")
+                     .font(Theme.Typography.body)
+                     .foregroundStyle(Theme.Palette.textSecondary)
+-- 
+2.51.1
+
+
+From c55142a6b76a1bbca93ff5f5e99feedfcb12b1e5 Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:41:28 +0000
+Subject: [PATCH 5/6] Document tvOS feature preservation and native build
+ boundary
+
+---
+ docs/TVOS-CINEMATIC-REDESIGN.md | 68 +++++++++++++++++++++++++++++++++
+ 1 file changed, 68 insertions(+)
+ create mode 100644 docs/TVOS-CINEMATIC-REDESIGN.md
+
+diff --git a/docs/TVOS-CINEMATIC-REDESIGN.md b/docs/TVOS-CINEMATIC-REDESIGN.md
+new file mode 100644
+index 0000000..1378788
+--- /dev/null
++++ b/docs/TVOS-CINEMATIC-REDESIGN.md
+@@ -0,0 +1,68 @@
++# tvOS cinematic presentation change
++
++Baseline: `7fbd586dca4438d4b696ec0426fb455794554e1a` (public `VortXTV/VortX` main, 2026-10-31). Development branch: `feature/tvos-cinematic-redesign`.
++
++This change keeps the existing engine, native top tab shell, page navigation stacks, profile and account ownership, source resolver, and playback presenter. The visual direction is restrained dark chrome, bright readable text, full-bleed cached art, white primary controls, and gentle focus lift. It uses VortX artwork and system fonts; no third-party service branding or sample catalogues were added.
++
++## Architecture from source
++
++| Responsibility | Source and current behavior |
++| --- | --- |
++| App entry and state | `app/SourcesTV/VortXTVApp.swift` starts the app and bridge; `RootView` in `RootTabView.swift` keeps the shell mounted under the player and presents the profile picker as a real modal. |
++| Tabs and navigation | `RootTabView.swift` owns native tvOS `TabView`: Home, Discover, Live TV, Library, Search, Add-ons, Settings. Four optional tabs retain their saved visibility preferences. Each content page owns its existing `NavigationStack` or receives the Search host stack. |
++| Home/catalogues | `HomeView.swift` reads `CoreBridge` board rows, profile-aware Continue Watching, For You, Trakt/SIMKL and media-server rails, and arranged Home rows. `DiscoverView.swift` and `BrowseGridView.swift` retain real catalogue selection, filters and pagination. |
++| Focus/art | `SharedUI.swift` owns the debounced `FocusedItemModel`, `BrowseHeroBackdrop`, `PosterCard`, `ProgressStripe` and cached/downsampled image loading through `PosterImageLoader`. `DetailView.swift` owns `FullBleedBackdrop`, metadata, sources and episodes. |
++| Detail and streams | `DetailView.swift` contains movie, series and live layouts, `CoreSeasonedEpisodes`, `CoreEpisodeStreams`, and `CoreStreamList`. The latter merges the engine with the existing debrid, media-server and source-index contributors; its stable, bounded rows preserve focus during updates. |
++| Player | `RootTabView.swift` owns `PlayerPresenter`; `TVPlayerView.swift` owns remote, source, subtitle/audio and recovery UI. `app/Sources/Player` and `VortXAetherKit` contain the player adapters. |
++| Account, profile and preferences | `SourcesShared/ProfilesView.swift`, `AddonsView.swift`, `AddonStoreView.swift`, account services and `CoreBridge` retain identity and mutations. `SettingsView.swift` and `TVSettingsCategoryPolicy.swift` retain the existing `@AppStorage` keys and searchable section inventory. `Theme.swift`/`ThemeManager.swift` keep the user's appearance controls. |
++| Build | `app/project.yml` defines the Full/Lite/Top Shelf targets; `scripts/generate-native-apple-project.rb` creates the approved native project spec; `.github/workflows/release-tvos.yml` documents native ABI, package and signing gates. |
++
++## Feature preservation and screen replacement
++
++The replacement is an in-place presentation of the same views. Rows and actions not named in the styling changes remain on their original routes.
++
++| Existing tvOS surface | Redesign and route preserved |
++| --- | --- |
++| Home and Continue Watching | `HomeView` uses the same engine/profile/remote selection and arrangement. A focus-reactive hero action opens the existing detail/source path for ordinary titles. Private/remote history items retain their guarded rail route. Posters and progress remain `PosterCard`/`ProgressStripe`; long-press actions remain. |
++| Discover, catalog grids and search | `DiscoverView`, `BrowseGridView` and `SearchView` retain add-on catalogue requests, type/genre chips, pagination, advanced filters, the native tvOS search host and existing provider grouping. Reusable headers and tvOS shared type/focus tokens update the presentation. |
++| Library, Watchlist, collections, downloads and network shares | `LibraryView`, `TVWatchlistView`, `TVSmartCollectionsView`, `TVDownloadsView` and `TVNetworkSharesView` keep saved items, progress, sorting, filters, watched actions, device-local downloads and media-server/network routes. Headers and shared poster/focus styles change; storage/sync does not. |
++| Movie, series, episode and live details | `DetailView` retains watch/resume, trailers, library/watchlist, cast, recommendations, seasons, episode progress, source list and quality/player choices. Series now uses the same resolved logo/title component as movies; episode panels use quieter solid surfaces and a white focus ring. `LiveView` and `TVLiveGuideView` retain EPG and stream routing. |
++| Add-ons and store | Shared `AddonsView` and `AddonStoreView` keep installation, ordering, visibility, configuration, manifest actions and external configuration handoff. tvOS-only headers change their presentation. |
++| Profiles, account, backup | `ProfilePickerView` and its edit/recovery routes keep identity, switching, PIN, sign-in and sync. `BackupExportView`/`BackupImportView` retain their transfer flow. tvOS-only heading/avatar treatment changes. |
++| Settings | `SettingsView` keeps all eight `TVSettingsCategory` destinations, all `SettingsSearchSection` cases, global search, persistence keys, source/advanced controls and backup/about routes. Category cards become a spacious two-column grid. |
++| Playback | `TVPlayerView` retains MPV/AVPlayer/Aether routing, seek, queues, resume, track/subtitle menus, source switching and recovery. Only skip and Up Next prompt chrome/typography changes. The player engines and request type are untouched. |
++
++The original Full/Lite boundary remains in `project.yml`: both compile `SourcesTV` and `SourcesShared`; Full selects `VORTX_ENGINE_SERVER`, an in-process server and Top Shelf app group/extension. Lite selects `VORTX_NO_EMBEDDED_SERVER`, has no embedded torrent server or Top Shelf extension, and keeps its debrid/direct boundary. The new components contain no Full-only controls.
++
++## Change log
++
++- Added `CinematicUI.swift`: reusable tvOS color/spacing tokens, screen header, hero action and focus-aware button style. The hero reads the already-owned `FocusedItemModel`, so moving focus does not issue a new catalogue request or rebuild all Home rails.
++- Refined tvOS typography, white/grey ink, quieter card lift, visible row focus and white primary actions in `Theme.swift`; iOS/Mac branches retain their original styling.
++- Improved artwork replacement in `FullBleedBackdrop`: retain the decoded image during a new cached/downsampled request, dim during replacement, crossfade after a result, cancel stale work, and honor Reduce Motion. `BrowseHeroBackdrop` no longer forces the entire backdrop view to remount per focused ID. Its logo task ignores stale results.
++- Updated Home rail hierarchy and real detail/source entry points; redesigned series title treatment and episode cards; aligned discovery, search, library, live, add-on, settings, profile, watchlist and supporting screen headings.
++- Restyled player skip and Up Next prompts without changing command handling, timing or playback requests.
++
++## Build and verification boundary
++
++`docs/BUILDING.md` explicitly says a complete shipping app cannot be built from the public clone. `app/project.yml` links `Vendor/VortxEngine.xcframework` for both tvOS targets and uses the local `Vendor/MPVKit-DVFEL` package. The private native engine source and reviewed SDK artifacts, including its simulator/device slices, are absent here; the public player package manifest alone does not supply the verified binary slices. The release workflow builds the SDK from authorized private source, checks ABI and packaging, fetches a checksum-verified MPVKit artifact, and generates the project. An IPA is neither a legitimate replacement for those inputs nor a source of buildable private code.
++
++| Gate | Result in this environment |
++| --- | --- |
++| Source changes and route review | Implemented in the public UI; routes, source selection, settings categories and target configuration inspected. |
++| Whitespace/patch and project YAML | `git diff --check` passed; PyYAML confirmed both TV targets include `SourcesTV`/`SourcesShared` and retain their different compilation flags. Five mail patches applied cleanly with `git am` to a detached baseline worktree. |
++| Existing native package fixture tests | `python3 scripts/tests/test_native_apple_package.py`: 31 passed. These exercise packaging proof logic, not this UI or live native binaries. |
++| Swift typecheck or Full/Lite compile | Not run: Linux host has no `swiftc`, Xcode, XcodeGen or Apple SDK, and the private SDK is absent. |
++| Simulator preview, focus, UI and streaming tests | Not run: no tvOS simulator or hardware. Source inspection and a development-only mock would not prove a real app build. |
++| Signed IPA and hardware playback | Not produced or verified. Requires the authorized native inputs, Mac build, developer signing and device validation. |
++
++No mock data or mock service was added to production. The repository's existing `CinemaUISmokeRenderer` fixture is not a substitute for a complete native target build.
++
++### Reproduce on an Apple Silicon Mac with authorized inputs
++
++1. Check out the baseline above, apply the delivered patch (or check out the branch), and use a current Xcode with tvOS 18 SDK and the XcodeGen version verified in `.github/workflows/release-tvos.yml`. Install the repository's documented toolchains and run its private-source input gates. Do not insert SDKs from unrelated revisions.
++2. Obtain the reviewed `vortx-core` revision through the project's authorized channel. Build or stage `app/Vendor/VortxEngine.xcframework` and retained pre-localization archives with the repository's `scripts/build-ffi-xcframework.sh --resource-host`, then run `scripts/verify-native-engine-abi.sh` and `scripts/verify-apple-engine-artifacts.sh` as in the release workflow. Supply the release-verified MPVKit-DVFEL package including its binary artifacts and run `scripts/verify-mpvkit-dvfel-artifacts.sh`.
++3. From the repository root, generate the native spec with `ruby scripts/generate-native-apple-project.rb --engine-revision <reviewed-40-hex-engine-revision> --mpvkit "$PWD/app/Vendor/MPVKit-DVFEL" --output "$PWD/app/.native-project.yml"`, then `(cd app && xcodegen generate --spec .native-project.yml)`. This step also needs Apple's `plutil`.
++4. Build both targets using the release workflow's command shape: `xcodebuild -project app/VortX.xcodeproj -scheme VortXTV -configuration Release -destination 'generic/platform=tvOS' -derivedDataPath app/build/cinematic-full CODE_SIGNING_ALLOWED=NO build` and repeat for `VortXTVLite` with a separate derived-data path. Run simulator launch and remote-focus scenarios, then physical Apple TV playback, tracks, resume, profile, add-ons, settings and Full/Lite checks. Treat a build failure as a failure; do not weaken the ABI/content gates.
++5. For an installable build, select your Apple development team and matching tvOS provisioning profiles in Xcode's Signing & Capabilities for the app and, for Full, its Top Shelf extension and `group.com.stremiox.tv` app-group entitlement. Archive the desired scheme for a generic tvOS device and export a Development or Ad Hoc IPA through Xcode Organizer using your account. Pair the Apple TV in Xcode Devices and Simulators, install the exported app, and verify launch/playback. Do not share passwords, certificates or private keys with this patch. The exact export/signing path depends on your team's entitlement and device registration.
++
++The project requires a compile and device pass before describing this source change as a validated commercial release.
+-- 
+2.51.1
+
+
+From df2e57db1cd1187c5c2c97195f12df1bac04bc4c Mon Sep 17 00:00:00 2001
+From: Codex <codex@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:42:25 +0000
+Subject: [PATCH 6/6] Keep Home playback wording aligned with source selection
+ route
+
+---
+ app/SourcesTV/CinematicUI.swift | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/app/SourcesTV/CinematicUI.swift b/app/SourcesTV/CinematicUI.swift
+index 8f9cfeb..64835d8 100644
+--- a/app/SourcesTV/CinematicUI.swift
++++ b/app/SourcesTV/CinematicUI.swift
+@@ -84,7 +84,7 @@ private struct TVCinemaActionContent: View {
+ }
+ 
+ /// Focused artwork already belongs to `FocusedItemModel`. The buttons open the real detail page:
+-/// movie playback uses its existing Watch/source pipeline, while series open their episode browser.
++/// movies expose the existing Watch/source pipeline, while series open their episode browser.
+ /// No direct URL, synthetic source, or new progress state is constructed here.
+ struct TVCinemaHomeActions: View {
+     @ObservedObject var model: FocusedItemModel
+@@ -96,12 +96,12 @@ struct TVCinemaHomeActions: View {
+                 HStack(spacing: 14) {
+                     if hero.type == "movie" {
+                         NavigationLink {
+-                            DetailView(type: hero.type, id: hero.id, autoPlayOnAppear: true)
++                            DetailView(type: hero.type, id: hero.id)
+                         } label: {
+-                            Label("Watch now", systemImage: "play.fill")
++                            Label("Choose a source", systemImage: "play.fill")
+                         }
+                         .buttonStyle(TVCinemaActionStyle(prominent: true))
+-                        .accessibilityHint("Opens VortX's source selection and playback")
++                        .accessibilityHint("Opens VortX's playback and source selection")
+                     } else if hero.type == "series" {
+                         NavigationLink {
+                             DetailView(type: hero.type, id: hero.id)
+@@ -110,7 +110,7 @@ struct TVCinemaHomeActions: View {
+                         }
+                         .buttonStyle(TVCinemaActionStyle(prominent: true))
+                     }
+-                    if hero.type != "series" {
++                    if hero.type != "movie" && hero.type != "series" {
+                         NavigationLink {
+                             DetailView(type: hero.type, id: hero.id)
+                         } label: {
+-- 
+2.51.1
+
