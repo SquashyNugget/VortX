@@ -192,7 +192,13 @@ struct AddonsView: View {
                     // Read the shared order revision so a reorder (in-app drag or remote pull) re-runs body and
                     // re-sorts the ForEach below via orderedByApplied. Must be READ in body to be tracked.
                     let _ = orderObserver.revision
+                    #if os(tvOS)
+                    TVCinemaScreenHeader(title: String(localized: "Add-ons"),
+                                         eyebrow: String(localized: "Your sources"),
+                                         subtitle: String(localized: "Manage installed add-ons and their catalogs"))
+                    #else
                     Text("Add-ons").screenTitleStyle()
+                    #endif
                     if !(account.isSignedIn || vortxSync.isSignedIn) {
                         hint("Sign in to manage your add-ons. They sync across your devices and the official apps.")
                     } else {
@@ -749,7 +755,12 @@ struct AddonReorderTVView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.md) {
+                #if os(tvOS)
+                TVCinemaScreenHeader(title: String(localized: "Reorder add-ons"),
+                                     eyebrow: String(localized: "Add-ons"))
+                #else
                 Text("Reorder add-ons").screenTitleStyle()
+                #endif
                 ProfileAddonInheritanceControls(showsVisibility: false)
                 Text(profiles.activeSharesMainAddons
                      ? "Move an add-on up or down to customize this profile's ranking. Main's order stays unchanged."

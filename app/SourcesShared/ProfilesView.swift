@@ -129,7 +129,7 @@ struct ProfilePickerView: View {
                                 // surfaces move to true vertical centering below.
                                 Spacer(minLength: max(40, geometry.size.height * 0.34))
                             }
-                            if let movie = artwork.movie {
+                            if !layout.isTV, let movie = artwork.movie {
                                 Text(movie.name)
                                     .modifier(ProfilePickerText(size: layout.movieTextSize, style: .title, design: .serif))
                                     .multilineTextAlignment(.center)
@@ -137,11 +137,26 @@ struct ProfilePickerView: View {
                                     .padding(.bottom, 12)
                                     .accessibilityHidden(true)
                             }
+                            #if os(tvOS)
+                            VStack(spacing: 14) {
+                                Text("VORTX")
+                                    .font(Theme.Typography.eyebrow)
+                                    .tracking(4)
+                                    .foregroundStyle(TVCinema.secondaryInk)
+                                Text(isEditing ? "Edit profiles" : "Who's watching?")
+                                    .font(Theme.Typography.screenTitle)
+                                    .foregroundStyle(TVCinema.ink)
+                                    .accessibilityAddTraits(.isHeader)
+                            }
+                            .multilineTextAlignment(.center)
+                            .padding(.bottom, 22)
+                            #else
                             Text(isEditing ? "Edit profiles" : "Who's watching?")
                                 .modifier(ProfilePickerText(size: layout.headingTextSize, style: .title2, design: .rounded))
                                 .foregroundStyle(.white)
                                 .multilineTextAlignment(.center)
                                 .accessibilityAddTraits(.isHeader)
+                            #endif
                             if !nativeSync.isSignedIn {
                                 Text("Sign in to your VortX account to load your profiles.")
                                     .font(.callout).foregroundStyle(.white)
@@ -910,8 +925,15 @@ private struct ProfileAvatarFace: View {
     @Environment(\.isFocused) private var focused
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
+            #if os(tvOS)
             RoundedRectangle(cornerRadius: side * 0.23, style: .continuous)
-                .fill(LinearGradient(colors: [accent, accent.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: [accent.opacity(0.68), TVCinema.panel],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+            #else
+            RoundedRectangle(cornerRadius: side * 0.23, style: .continuous)
+                .fill(LinearGradient(colors: [accent, accent.opacity(0.45)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+            #endif
             Text(profile.avatar).font(.system(size: side * 0.53))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if profile.hasPin || isEditing || isCurrent {

@@ -56,7 +56,8 @@ struct TVWatchlistView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text("Watchlist").screenTitleStyle()
+                TVCinemaScreenHeader(title: String(localized: "Watchlist"),
+                                     eyebrow: String(localized: "Saved for later"))
                 Button { dismiss() } label: {
                     Label("Back to Library", systemImage: "chevron.left")
                 }

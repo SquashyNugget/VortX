@@ -35,7 +35,8 @@ struct BackupExportView: View {
 
     var body: some View {
         VStack(spacing: Theme.Space.md) {
-            Text("Back up").screenTitleStyle()
+            TVCinemaScreenHeader(title: String(localized: "Back up"),
+                                 eyebrow: String(localized: "Account and data"), centered: true)
 
             switch status {
             case .starting:

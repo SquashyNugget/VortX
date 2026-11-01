@@ -7,7 +7,8 @@ struct TVLiveGuideView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.md) {
-            Text("TV guide").screenTitleStyle()
+            TVCinemaScreenHeader(title: String(localized: "TV guide"),
+                                 eyebrow: String(localized: "Live TV"))
             if channels.isEmpty {
                 Text("No live channels yet. Add an IPTV playlist or a live TV add-on and its channels appear here.")
                     .font(Theme.Typography.body).foregroundStyle(Theme.Palette.textSecondary)

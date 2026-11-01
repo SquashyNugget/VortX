@@ -140,8 +140,9 @@ struct DiscoverView: View {
     /// catalog is loaded, so it can hand the panel the current catalog's genre + type context.
     @ViewBuilder private func titleRow(hasCatalog: Bool) -> some View {
         let filters = catalogPrefs.discoverFilters
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.md) {
-            Text("Discover").screenTitleStyle()
+        HStack(alignment: .bottom, spacing: Theme.Space.md) {
+            TVCinemaScreenHeader(title: String(localized: "Discover"),
+                                 eyebrow: String(localized: "Explore"))
             Spacer(minLength: Theme.Space.md)
             if hasCatalog {
                 Button { showFilters = true } label: {

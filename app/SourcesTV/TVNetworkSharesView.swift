@@ -10,7 +10,8 @@ struct TVNetworkSharesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text("Network shares").screenTitleStyle()
+                TVCinemaScreenHeader(title: String(localized: "Network shares"),
+                                     eyebrow: String(localized: "Your media"))
                 Text("Play videos straight from a NAS or computer on your network: an SMB share (smb://nas/Movies), a WebDAV address, or a web server's folder listing.")
                     .font(Theme.Typography.body).foregroundStyle(Theme.Palette.textSecondary)
                     .frame(maxWidth: 1100, alignment: .leading)
@@ -60,7 +61,7 @@ struct TVNetworkFolderView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.md) {
-                Text(title).screenTitleStyle()
+                TVCinemaScreenHeader(title: title, eyebrow: share.name)
                 if let playMessage {
                     Text(playMessage).font(Theme.Typography.label).foregroundStyle(Theme.Palette.danger)
                 }

@@ -475,6 +475,7 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
     /// while the clip played.
     var trailer: () -> TrailerLayer
     @EnvironmentObject private var theme: ThemeManager
+    @ReducedMotion private var reduceMotion
     /// Settings > Effects and performance: animated, still or no focus art.
     @AppStorage(VisualEffects.backdropKey) private var backdropChoice = VisualEffects.auto
     private var backdropMode: VisualEffects.Backdrop {
@@ -501,9 +502,8 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
             Theme.Palette.canvas.ignoresSafeArea()
             if let hero = model.hero {
                 if backdropMode != .off {
-                    FullBleedBackdrop(url: hero.backdrop, allowsUltraHD: hero.allowsUltraHD ?? false)
-                        .id(hero.id)
-                        .transition(.opacity)
+                    FullBleedBackdrop(url: hero.backdrop, allowsUltraHD: hero.allowsUltraHD ?? false,
+                                      animatesReplacement: backdropMode == .animated)
                 }
                 // The muted trailer clip sits OVER the still backdrop but UNDER the details, so a
                 // resolved clip becomes the moving background while the logo / meta / synopsis stay on
@@ -518,8 +518,9 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
                 }
             }
         }
-        .animation(backdropMode == .animated ? .easeOut(duration: 0.35) : nil, value: model.hero?.id)
-        .animation(.easeOut(duration: 0.25), value: model.detailsVisible)
+        .animation(backdropMode == .animated && !reduceMotion ? .easeOut(duration: 0.35) : nil,
+                   value: model.hero?.id)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.detailsVisible)
         // Resolve the focused title's clearlogo by id (TMDB, same source as the landscape cards) so the
         // hero shows the logo in place of the serif title text, matching the iOS/Mac hero. Re-runs per hero.
         .task(id: model.hero?.id) { await loadHeroLogo() }
@@ -541,6 +542,11 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
     /// reads as one composed unit instead of evenly stacked lines.
     private func detailsBlock(_ hero: FocusedHero) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            Text(hero.type.uppercased())
+                .font(Theme.Typography.eyebrow)
+                .tracking(2.4)
+                .foregroundStyle(TVCinema.secondaryInk)
+                .padding(.bottom, 12)
             if let heroLogo {
                 // The clearlogo IS the title in image form; expose the name to VoiceOver, not the art.
                 Image(uiImage: heroLogo).resizable().aspectRatio(contentMode: .fit)
@@ -550,24 +556,24 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
             } else {
                 Text(hero.title)
                     .font(Theme.Typography.screenTitle)
-                    .foregroundStyle(Theme.Palette.textPrimary)
+                    .foregroundStyle(TVCinema.ink)
                     .lineLimit(2).minimumScaleFactor(0.7)
                     .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
             }
             Text(hero.metaLine)
                 .font(Theme.Typography.label)
-                .foregroundStyle(Theme.Palette.textSecondary)
+                .foregroundStyle(TVCinema.secondaryInk)
                 .padding(.top, 14)
             if let genres = hero.genreLine {
                 Text(genres)
                     .font(Theme.Typography.label)
-                    .foregroundStyle(Theme.Palette.textTertiary)
+                    .foregroundStyle(TVCinema.quietInk)
                     .padding(.top, 6)
             }
             if let overview = hero.overview, !overview.isEmpty {
                 Text(overview)
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Palette.textSecondary)
+                    .foregroundStyle(TVCinema.secondaryInk)
                     .lineLimit(3).lineSpacing(5)
                     .frame(maxWidth: 740, alignment: .leading)
                     .padding(.top, 18)
@@ -585,6 +591,7 @@ struct BrowseHeroBackdrop<TrailerLayer: View>: View {
         let resolved = await Fanart.logo(id: hero.id, type: hero.type)
             ?? PosterArtwork.logo(id: hero.id, fallback: hero.logo ?? metahubLogo(for: hero.id))
         guard let lg = resolved, let img = await fetchHeroImage(lg) else { return }
+        guard !Task.isCancelled, model.hero?.id == hero.id else { return }
         heroLogo = img
     }
 
@@ -842,10 +849,10 @@ struct PosterCard: View {
                     .opacity(isWatched ? 0.55 : 1)
                 if !catalogPrefs.hidePosterLabels {
                     Text(displayTitle)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(Theme.Typography.label)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundStyle(Theme.Palette.textSecondary)
+                        .foregroundStyle(TVCinema.secondaryInk)
                         .frame(width: cardWidth, alignment: .leading)
                 }
             }
@@ -947,7 +954,7 @@ struct CoreEmptyState: View {
         VStack(spacing: Theme.Space.md) {
             Image(systemName: systemImage)
                 .font(.system(size: 60, weight: .regular))
-                .foregroundStyle(Theme.Palette.accent)
+                .foregroundStyle(TVCinema.secondaryInk)
             Text(title)
                 .font(Theme.Typography.sectionTitle)
                 .foregroundStyle(Theme.Palette.textPrimary)

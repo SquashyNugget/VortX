@@ -21,9 +21,15 @@ enum Theme {
         /// The translucent glass LIFT tone (see `ThemeManager.glassVeil`). Exposed here so the glass reads it
         /// through the same `Theme.Palette` door as the surfaces it is an elevation step of.
         @MainActor static var glassVeil: Color { ThemeManager.shared.glassVeil }
+        #if os(tvOS)
+        static let textPrimary   = Color.white
+        static let textSecondary = rgb(0.78, 0.80, 0.83)
+        static let textTertiary  = rgb(0.67, 0.70, 0.74)
+        #else
         static let textPrimary   = rgb(0.965, 0.945, 0.914) // #F6F1E9
         static let textSecondary = rgb(0.737, 0.694, 0.631) // #BCB1A1
-        static let textTertiary  = rgb(0.620, 0.580, 0.520) // #9E9485, raised from #8C8273 so 10-11pt text clears 4.5:1 on the warm canvas across all 8 accents
+        static let textTertiary  = rgb(0.620, 0.580, 0.520) // #9E9485
+        #endif
         // Accent is user-themeable via ThemeManager (8 curated accents). accentSoft / onAccent follow it.
         @MainActor static var accent: Color { ThemeManager.shared.accent }             // focus / selection / primary / progress
         @MainActor static var accentBright: Color { ThemeManager.shared.accentBright } // focus glow highlight
@@ -135,14 +141,14 @@ enum Theme {
             (size * CGFloat(ThemeManager.shared.textScale)).rounded()
         }
         #if os(tvOS)
-        static var hero: Font        { .system(size: scaled(64), weight: .heavy, design: .serif) }
-        static var wordmark: Font    { .system(size: scaled(38), weight: .bold, design: .serif) }
-        static var screenTitle: Font { .system(size: scaled(52), weight: .heavy) }
+        static var hero: Font        { .system(size: scaled(66), weight: .bold) }
+        static var wordmark: Font    { .system(size: scaled(38), weight: .semibold) }
+        static var screenTitle: Font { .system(size: scaled(50), weight: .semibold) }
         static var sectionTitle: Font { .system(size: scaled(30), weight: .semibold) }
-        static var cardTitle: Font   { .system(size: scaled(22), weight: .semibold) }
-        static var body: Font        { .system(size: scaled(24), weight: .regular) }
+        static var cardTitle: Font   { .system(size: scaled(22), weight: .medium) }
+        static var body: Font        { .system(size: scaled(23), weight: .regular) }
         static var label: Font       { .system(size: scaled(20), weight: .medium) }
-        static var eyebrow: Font     { .system(size: scaled(15), weight: .bold) }
+        static var eyebrow: Font     { .system(size: scaled(15), weight: .semibold) }
         #else
         // iOS / macOS arm's-length ramp (S1). wordmark is unused in the app; 24 preserves its former
         // proportion (0.62*38) since it was not part of the inversion bug.
@@ -185,7 +191,11 @@ extension View {
 /// Crafted card focus: scale + lift + warm ember glow, spring-eased, Reduce-Motion aware.
 /// Reads `isFocused` from the enclosing Button (the nearest focusable ancestor).
 struct CardFocusStyle: ButtonStyle {
+    #if os(tvOS)
+    var scale: CGFloat = 1.045
+    #else
     var scale: CGFloat = 1.08
+    #endif
     func makeBody(configuration: Configuration) -> some View {
         CardFocusContent(configuration: configuration, scale: scale)
     }
@@ -208,14 +218,19 @@ private struct CardFocusContent: View {
         #else
         let active = focused
         #endif
+        #if os(tvOS)
+        let haloOpacity = 0.22
+        #else
+        let haloOpacity = 0.75
+        #endif
         let lifted = active && !reduceMotion
         let label = configuration.label
             .scaleEffect(lifted ? scale : (configuration.isPressed ? 0.97 : 1))
             // Theme-colored halo on focus: an even accent glow that reads, at a glance and from
             // across the room, which card the focus is on. Sized to sit inside the rails' padding
             // so it never clips at a row edge.
-            .shadow(color: Theme.Palette.accent.opacity(active ? 0.75 : 0),
-                    radius: active ? 18 : 0, x: 0, y: 0)
+            .shadow(color: Theme.Palette.accent.opacity(active ? haloOpacity : 0),
+                    radius: active ? 15 : 0, x: 0, y: 0)
             // A soft black depth underneath grounds the lifted card on any artwork or theme.
             .shadow(color: .black.opacity(active ? 0.45 : 0.32),
                     radius: active ? 16 : 12, x: 0, y: active ? 10 : 7)
@@ -251,6 +266,17 @@ private struct PrimaryActionContent: View {
         #else
         let active = focused
         #endif
+        #if os(tvOS)
+        let label = configuration.label
+            .font(Theme.Typography.label.weight(.semibold))
+            .foregroundStyle(Color.black)
+            .padding(.horizontal, Theme.Space.lg)
+            .padding(.vertical, Theme.Space.md)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+            .scaleEffect(active && !reduceMotion ? 1.035 : (configuration.isPressed ? 0.97 : 1))
+            .shadow(color: .black.opacity(active ? 0.6 : 0.35), radius: active ? 20 : 10, y: 9)
+            .animation(reduceMotion ? nil : Theme.Motion.focus, value: active)
+        #else
         let label = configuration.label
             .font(Theme.Typography.label)
             .foregroundStyle(Theme.Palette.onAccent)
@@ -264,6 +290,7 @@ private struct PrimaryActionContent: View {
             .scaleEffect(active && !reduceMotion ? 1.06 : (configuration.isPressed ? 0.97 : 1))
             .shadow(color: Theme.Palette.accent.opacity(active ? 0.55 : 0), radius: 26, y: 12)
             .animation(reduceMotion ? nil : Theme.Motion.focus, value: active)
+        #endif
         #if os(macOS)
         return label.onHover { isHovered = $0 }
         #else
@@ -296,6 +323,13 @@ private struct RowFocusContent: View {
         #else
         let active = focused
         #endif
+        #if os(tvOS)
+        let ring = Color.white.opacity(0.88)
+        let ringWidth: CGFloat = 2
+        #else
+        let ring = Theme.Palette.accent
+        let ringWidth: CGFloat = 3
+        #endif
         let label = configuration.label
             // Glass row fill (renders BELOW the ember ring / scale / lift-shadow below, which are kept
             // byte-identical). `focused` lifts the fill alpha for the same brighten the old surface1 ->
@@ -303,7 +337,7 @@ private struct RowFocusContent: View {
             .vortxGlassRow(focused: active)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .strokeBorder(Theme.Palette.accent, lineWidth: active ? 3 : 0)
+                    .strokeBorder(ring, lineWidth: active ? ringWidth : 0)
             )
             .scaleEffect(active && !reduceMotion ? 1.015 : (configuration.isPressed ? 0.99 : 1))
             .shadow(color: active ? Theme.Palette.accent.opacity(0.28) : .clear, radius: 22, y: 10)

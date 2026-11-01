@@ -49,7 +49,8 @@ struct LiveView: View {
                 .heroBottomStrip()
             }
             .overlay(alignment: .topLeading) {
-                Text("Live TV").screenTitleStyle()
+                TVCinemaScreenHeader(title: String(localized: "Live TV"),
+                                     eyebrow: String(localized: "Channels and guide"))
                     .padding(.horizontal, Theme.Space.screenEdge)
                     .padding(.top, 44)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

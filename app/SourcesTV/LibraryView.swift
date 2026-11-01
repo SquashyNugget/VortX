@@ -110,7 +110,9 @@ struct LibraryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.md) {
                         Color.clear.frame(height: 0).scrollToTopAnchor()   // re-select Library tab -> scroll here
-                        Text("Library").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)
+                        TVCinemaScreenHeader(title: String(localized: "Library"),
+                                             eyebrow: String(localized: "Your collection"))
+                            .padding(.horizontal, Theme.Space.screenEdge)
                         Button(action: selectRandomLibraryItem) {
                             Label("Random pick", systemImage: "shuffle")
                         }

@@ -43,8 +43,10 @@ struct GlassEpisodeCard: View {
     private static let watchedShade: Double = 0.58
 
     private var artHeight: CGFloat { width * 9 / 16 }
-    private var radius: CGFloat { tenFoot ? 24 : 22 }
-    private var frosted: Bool { VisualEffects.glassEnabled && !reduceTransparency && contrast != .increased }
+    private var radius: CGFloat { tenFoot ? 15 : 22 }
+    // The Apple TV grid may show dozens of episodes while scrolling. A solid panel keeps the
+    // synopsis readable and avoids another blurred, scaled image layer for every focusable card.
+    private var frosted: Bool { !tenFoot && VisualEffects.glassEnabled && !reduceTransparency && contrast != .increased }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -60,7 +62,7 @@ struct GlassEpisodeCard: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(VortXGlass.highlight(0.16), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(tenFoot ? 0.16 : 0.10), lineWidth: 1)
         }
         // Dimmed as one opaque card: art and panel lose their colour together and one shade darkens them evenly.
         // Fading the card's opacity instead let the oversized blurred art behind the panel show through the
@@ -196,7 +198,11 @@ struct GlassEpisodeCard: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         } else {
+            #if os(tvOS)
+            Color(red: 0.07, green: 0.075, blue: 0.085)
+            #else
             Theme.Palette.surface1
+            #endif
         }
     }
 

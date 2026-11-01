@@ -16,7 +16,9 @@ struct TVPosterStyleView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text("Poster Style").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)
+                TVCinemaScreenHeader(title: String(localized: "Poster Style"),
+                                     eyebrow: String(localized: "Appearance"))
+                    .padding(.horizontal, Theme.Space.screenEdge)
 
                 TVPosterStylePreview()
                     .frame(maxWidth: .infinity)

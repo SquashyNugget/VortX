@@ -151,6 +151,12 @@ struct HomeView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Space.lg) {
                         Color.clear.frame(height: 0).scrollToTopAnchor()   // re-select Home tab -> scroll here
+                        // Private remote history and overlay-profile progress keep their existing
+                        // guarded Continue Watching route. The hero never bypasses that context.
+                        TVCinemaHomeActions(model: focusModel,
+                            restrictedIDs: renderedContinueWatching.selection.source.isPrivate
+                                || renderedContinueWatching.selection.sessionID != nil
+                                ? Set(renderedContinueWatching.selection.items.map(\.id)) : [])
                         HStack {
                             HomeSurpriseButton(isActive: isActive, candidates: homeSurpriseCandidates) { homeSurpriseRoute = $0 }
                             Spacer(minLength: 0)
@@ -835,9 +841,19 @@ struct RailHeader: View {
     let title: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let eyebrow { Text(eyebrow).eyebrowStyle() }
-            Text(title).sectionTitleStyle()
+        HStack(alignment: .bottom, spacing: Theme.Space.md) {
+            VStack(alignment: .leading, spacing: 6) {
+                if let eyebrow {
+                    Text(eyebrow).eyebrowStyle(TVCinema.quietInk)
+                }
+                Text(title)
+                    .sectionTitleStyle()
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Rectangle()
+                .fill(TVCinema.edge)
+                .frame(height: 1)
+                .padding(.bottom, 8)
         }
         .padding(.horizontal, Theme.Space.screenEdge)
     }
@@ -852,12 +868,11 @@ struct GroupHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let eyebrow { Text(eyebrow).eyebrowStyle(Theme.Palette.accent) }
+            if let eyebrow { Text(eyebrow).eyebrowStyle(TVCinema.quietInk) }
             Text(title).screenTitleStyle()
             Rectangle()
-                .fill(Theme.Palette.accent)
-                .frame(width: 64, height: 4)
-                .clipShape(Capsule())
+                .fill(TVCinema.edge)
+                .frame(width: 112, height: 1)
         }
         .padding(.horizontal, Theme.Space.screenEdge)
         .padding(.top, Theme.Space.md)
@@ -1518,7 +1533,8 @@ struct TVHomeRailEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.md) {
                 HStack(alignment: .center) {
-                    Text("Customize Home").screenTitleStyle()
+                    TVCinemaScreenHeader(title: String(localized: "Customize Home"),
+                                         eyebrow: String(localized: "Your layout"))
                     Spacer()
                     Button { dismiss() } label: { Text("Done") }
                         .buttonStyle(ChipButtonStyle(selected: false))

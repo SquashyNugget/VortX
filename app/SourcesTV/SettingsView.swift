@@ -211,7 +211,8 @@ struct SettingsView: View {
     private var settingsLanding: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text("Settings").screenTitleStyle()
+                TVCinemaScreenHeader(title: String(localized: "Settings"),
+                                     eyebrow: String(localized: "Make VortX yours"))
                 // Keep the move state visible above both categories and global search results.
                 seedingBanner
                 searchSection
@@ -233,7 +234,9 @@ struct SettingsView: View {
 
     /// Native links keep remote Back and focus restoration on the existing navigation stack.
     private var settingsCategories: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.md) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Space.md),
+                            GridItem(.flexible(), spacing: Theme.Space.md)],
+                  alignment: .leading, spacing: Theme.Space.md) {
             ForEach(TVSettingsCategory.allCases) { category in
                 NavigationLink(value: category) {
                     HStack(spacing: Theme.Space.md) {
@@ -256,6 +259,7 @@ struct SettingsView: View {
                             .accessibilityHidden(true)
                     }
                     .padding(Theme.Space.lg)
+                    .frame(minHeight: 138)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(RowFocusStyle())
@@ -269,7 +273,9 @@ struct SettingsView: View {
     private func settingsCategoryPage(_ category: TVSettingsCategory) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text(category.title).screenTitleStyle()
+                TVCinemaScreenHeader(title: category.title,
+                                     eyebrow: String(localized: "Settings"),
+                                     subtitle: category.summary)
                 ForEach(category.sections, id: \.self) { id in
                     settingsSection(id)
                 }

@@ -133,6 +133,8 @@ private struct TVSearchContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.lg) {
+            TVCinemaScreenHeader(title: String(localized: "Search"),
+                                 eyebrow: String(localized: "Find something to watch"))
             if !history.isEmpty && !isTyping {
                 historySection
             }

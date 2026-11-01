@@ -141,10 +141,14 @@ struct AddonStoreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
+                #if os(tvOS)
+                TVCinemaScreenHeader(title: String(localized: "Discover add-ons"),
+                                     eyebrow: String(localized: "Community catalog"))
+                #else
                 Text("Discover add-ons").screenTitleStyle()
-                    // A long localized title scales down to fit instead of overflowing / clipping the row.
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)
+                #endif
                 hint("Browse the community add-on collection and install with one tap. Each shows whether it is reachable right now. Installed add-ons sync to your account and the official apps.")
                 searchField
                 if catalog.loading && catalog.addons.isEmpty {

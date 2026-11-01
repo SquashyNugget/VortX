@@ -9573,7 +9573,7 @@ struct TVPlayerView: View {
                         skipTo(segment)
                     } label: {
                         HStack(spacing: Theme.Space.sm) {
-                            Image(systemName: "forward.fill").foregroundStyle(Theme.Palette.accent)
+                            Image(systemName: "forward.fill").foregroundStyle(TVCinema.ink)
                             if let remaining = autoSkipRemaining(for: segment) {
                                 Text("\(segment.label) in \(max(1, Int(remaining.rounded(.up))))s")
                                     .fontWeight(.semibold).monospacedDigit()
@@ -9583,14 +9583,13 @@ struct TVPlayerView: View {
                         }
                         .padding(.leading, Theme.Space.xl).padding(.vertical, Theme.Space.md)
                         .padding(.trailing, Theme.Space.sm)
-                        // Glass ember skip pill (mockup .skippill): warm glass with an ember hairline and ember
-                        // glyph, upgrading to Liquid Glass on tvOS 26. Ink label, ember icon.
+                        // Legible, restrained chrome over a moving picture.
                         .foregroundStyle(Theme.Palette.textPrimary)
                         .vortxGlass(in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous),
                                     fillAlpha: VortXGlass.barFillAlpha, shadow: .pill)
                         .overlay {
                             RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                .strokeBorder(Theme.Palette.accent.opacity(0.5), lineWidth: 1)
+                                .strokeBorder(TVCinema.edge, lineWidth: 1)
                         }
                     }
                     .vortxSelfFocusButton()
@@ -9612,7 +9611,7 @@ struct TVPlayerView: View {
                                 .contentShape(Circle())
                                 .overlay {
                                     Circle().stroke(
-                                        Theme.Palette.accent,
+                                        TVCinema.ink,
                                         lineWidth: skipPillFocusedCancel ? 2 : 0
                                     )
                                 }
@@ -9638,18 +9637,18 @@ struct TVPlayerView: View {
                 Spacer()
                 HStack(spacing: 28) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("UP NEXT").font(.caption.weight(.bold)).tracking(2)
+                        Text("UP NEXT").font(Theme.Typography.eyebrow).tracking(2)
                             .foregroundStyle(Theme.Palette.textTertiary)
                         if let label = nextEpisodeLabel {
-                            Text(label).font(.title3.weight(.semibold))
+                            Text(label).font(Theme.Typography.sectionTitle)
                                 .foregroundStyle(Theme.Palette.textPrimary).lineLimit(1)
                         }
                         if let segment = currentSkip, segment.kind == .credits,
                            let remaining = autoSkipRemaining(for: segment) {
                             Text("Skipping credits in \(max(1, Int(remaining.rounded(.up))))s")
-                                .font(.callout).foregroundStyle(Theme.Palette.textSecondary)
+                                .font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
                         } else if let r = upNextRemaining {
-                            Text("Playing in \(r)s").font(.callout).foregroundStyle(Theme.Palette.textSecondary)
+                            Text("Playing in \(r)s").font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
                         }
                     }
                     upNextButton("Play Now", systemImage: "play.fill", highlighted: !upNextWantsCredits)
@@ -9680,16 +9679,17 @@ struct TVPlayerView: View {
             if let img = systemImage { Image(systemName: img) }
             Text(title).lineLimit(1)
         }
-        .font(.headline.weight(.semibold))
-        .foregroundStyle(highlighted ? Theme.Palette.onAccent : Theme.Palette.textPrimary)
+        .font(Theme.Typography.label.weight(.semibold))
+        .foregroundStyle(highlighted ? Color.black : TVCinema.ink)
         .padding(.horizontal, horizontalPadding).padding(.vertical, verticalPadding)
-        // Highlighted (Play Now / focused) stays a prominent solid-ember pill for 10-foot legibility;
-        // the idle pill (Watch Credits) rides the warm glass. The opaque accent layer sits above the
-        // glass so, when highlighted, it reads as solid ember rather than tinted glass.
-        .background { if highlighted { Capsule().fill(Theme.Palette.accent) } }
-        .vortxGlass(in: Capsule(), fillAlpha: VortXGlass.pillFillAlpha, shadow: .flat)
-        .overlay(Capsule().stroke(Theme.Palette.canvas, lineWidth: highlighted ? 3 : 0))
-        .scaleEffect(accessibilityReduceMotion ? 1.0 : (highlighted ? 1.06 : 1.0))
+        // These prompts are remote-driven, so the selected state must be visible without SwiftUI focus.
+        .background(highlighted ? Color.white : TVCinema.panel.opacity(0.94),
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(highlighted ? Color.clear : TVCinema.edge, lineWidth: 1)
+        }
+        .scaleEffect(accessibilityReduceMotion ? 1.0 : (highlighted ? 1.035 : 1.0))
         .fixedSize(horizontal: true, vertical: false)
     }
 

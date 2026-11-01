@@ -1642,15 +1642,11 @@ struct DetailView: View {
         // now a plain in-flow VStack: a leading Spacer pushes the title/actions block onto the lower band
         // where the FullBleedBackdrop's own bottom scrim keeps it readable. Mirrors moviePage exactly.
         VStack(alignment: .leading, spacing: Theme.Space.sm) {
-            Spacer().frame(height: 380)
+            Spacer().frame(height: 350)
             VStack(alignment: .leading, spacing: Theme.Space.sm) {
                 // This visible title/metadata block is the top focus destination for every lower rail.
                 VStack(alignment: .leading, spacing: Theme.Space.sm) {
-                    Text(m.name)
-                        .font(Theme.Typography.hero).tracking(-1.5)
-                        .foregroundStyle(Theme.Palette.textPrimary)
-                        .lineLimit(2).minimumScaleFactor(0.6)
-                        .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                    titleOrLogo(m)
                     metaRow(m)
                     financialsRow()
                     releaseDatesRow()
@@ -2653,8 +2649,8 @@ struct CoreSeasonedEpisodes: View {
                 artwork: AnyView(thumbnail(v, isWatched: isWatched, progress: progress, cardArt: true)),
                 tenFoot: true)
             .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Theme.Palette.accent, lineWidth: focusedEpisode == v.id ? 4 : 0)
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(TVCinema.ink.opacity(0.9), lineWidth: focusedEpisode == v.id ? 2 : 0)
             }
         }
         .buttonStyle(CardFocusStyle(scale: 1.04))
@@ -3143,8 +3139,12 @@ struct FullBleedBackdrop: View {
     // other call sites have a 16:9 backdrop and want it edge-to-edge), keeping those paths unchanged.
     var contentMode: ContentMode = .fill
     var allowsUltraHD = true
+    var animatesReplacement = true
     @EnvironmentObject private var theme: ThemeManager
+    @ReducedMotion private var reduceMotion
     @State private var image: UIImage?
+    @State private var imageKey = ""
+    @State private var loadingReplacement = false
 
     private var maxPixel: Int {
         let bounds = UIScreen.main.nativeBounds
@@ -3167,11 +3167,16 @@ struct FullBleedBackdrop: View {
             .overlay {
                 if let image {
                     Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+                        .id(imageKey)
+                        .transition(.opacity)
                 } else {
                     Theme.Palette.surface1
                 }
             }
             .clipped()
+            // Hold the previous decoded image until the next one is ready. Focus can move faster
+            // than a backdrop request; clearing the art at task start flashed the blank canvas.
+            .overlay(TVCinema.panel.opacity(loadingReplacement ? 0.30 : 0).allowsHitTesting(false))
             .overlay(
                 // Light hand: the artwork stays vivid across most of the screen; just enough
                 // canvas at the bottom for rows and at the leading edge for the text block.
@@ -3185,14 +3190,16 @@ struct FullBleedBackdrop: View {
                 LinearGradient(colors: [Theme.Palette.canvas.opacity(0.6), .clear],
                                startPoint: .leading, endPoint: .center))
             .ignoresSafeArea()
+            .animation(reduceMotion || !animatesReplacement ? nil : .easeOut(duration: 0.35), value: imageKey)
             .task(id: "\(artworkCandidates.joined(separator: "\n"))#\(maxPixel)") {
-                // A failed new URL must not keep the previous title's artwork on screen.
-                image = nil
+                loadingReplacement = image != nil
                 let loaded = await ArtworkFallbackPolicy.firstAvailable(artworkCandidates) {
                     await PosterImageLoader.load($0, maxPixel: CGFloat(maxPixel))
                 }
                 guard !Task.isCancelled else { return }
                 image = loaded
+                imageKey = artworkCandidates.joined(separator: "\n")
+                loadingReplacement = false
             }
     }
 }

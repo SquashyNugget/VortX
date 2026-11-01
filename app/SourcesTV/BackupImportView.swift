@@ -17,7 +17,8 @@ struct BackupImportView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: Theme.Space.lg) {
-                    Text("Restore").screenTitleStyle()
+                    TVCinemaScreenHeader(title: String(localized: "Restore"),
+                                         eyebrow: String(localized: "Account and data"), centered: true)
                     Text("Scan the code below on a phone or browser signed in to VortX to bring your profiles, add-ons, library, and watch history onto this Apple TV.")
                         .font(Theme.Typography.body)
                         .foregroundStyle(Theme.Palette.textSecondary)

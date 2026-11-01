@@ -12,7 +12,8 @@ struct TVWhatsNewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                Text("What's New").screenTitleStyle()
+                TVCinemaScreenHeader(title: String(localized: "What's New"),
+                                     eyebrow: String(localized: "VortX updates"))
                 Text("You're on VortX \(WhatsNew.version)")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Palette.textSecondary)
